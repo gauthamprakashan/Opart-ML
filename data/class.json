@@ -1,0 +1,53 @@
+{
+    "categories": [
+      {
+        "id": 0,
+        "name": "Assembling Station"
+      },
+      {
+        "id": 1,
+        "name": "Cheese Melter"
+      },
+      {
+        "id": 2,
+        "name": "Cold Drink Station"
+      },
+      {
+        "id": 3,
+        "name": "Customer Service Window"
+      },
+      {
+        "id": 4,
+        "name": "Delivery Line"
+      },
+      {
+        "id": 5,
+        "name": "Desert Tower"
+      },
+      {
+        "id": 6,
+        "name": "Evo Tower"
+      },
+      {
+        "id": 7,
+        "name": "Fryer"
+      },
+      {
+        "id": 8,
+        "name": "Hot station"
+      },
+      {
+        "id": 9,
+        "name": "Order Screen"
+      },
+      {
+        "id": 10,
+        "name": "Payment Screen"
+      }
+    ],
+    "info": {
+      "year": 2025,
+      "version": "1.0",
+      "contributor": "Label Studio"
+    }
+  }

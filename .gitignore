@@ -1,0 +1,51 @@
+# Python-specific ignores
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual environment
+venv/
+.env
+env/
+*.venv/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Project-specific data files
+data/videos/*
+output/*
+!data/videos/.gitkeep
+!output/.gitkeep
+!notebooks/.gitkeep
+
+# YOLO model files
+*.pt
+
+# Jupyter notebook checkpoints
+notebooks/.ipynb_checkpoints/
+
+# Temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Sensitive or local configuration files
+*.secret
+*.key
+*.pem
+local_settings.py

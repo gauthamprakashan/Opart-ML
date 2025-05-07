@@ -1,0 +1,45 @@
+{
+    "categories": [
+      {
+        "id": 0,
+        "name": "Airplane"
+      },
+      {
+        "id": 1,
+        "name": "Assembling Station"
+      },
+      {
+        "id": 2,
+        "name": "Car"
+      },
+      {
+        "id": 3,
+        "name": "Cheese Melter"
+      },
+      {
+        "id": 4,
+        "name": "Delivery Line"
+      },
+      {
+        "id": 5,
+        "name": "Desert Tower"
+      },
+      {
+        "id": 6,
+        "name": "Evo Tower"
+      },
+      {
+        "id": 7,
+        "name": "Fryer"
+      },
+      {
+        "id": 8,
+        "name": "Hot station"
+      }
+    ],
+    "info": {
+      "year": 2025,
+      "version": "1.0",
+      "contributor": "Label Studio"
+    }
+  }
