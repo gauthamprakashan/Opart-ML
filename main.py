@@ -89,7 +89,7 @@ class InferencePipeline:
         cap.release()
         if self.args.generate_video:
             out.release()
-        print(f"Finished processing and saved video: {output_path}")
+            print(f"Finished processing and saved video: {output_path}")
 
     def _extract_tracked_people(self, pose_result, frame_count):
         """Extract tracked individuals from pose results."""
