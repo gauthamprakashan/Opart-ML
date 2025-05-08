@@ -1,6 +1,6 @@
 import cv2
 
-def draw_annotations(frame, tracked_people, poses, body_part_boxes, person_interactions, current_pids):
+def draw_annotations(frame, tracked_people, poses, body_part_boxes, person_interactions, current_pids,boxes,frame_width,frame_height):
     """
     Draw annotations on the video frame.
     
@@ -42,5 +42,14 @@ def draw_annotations(frame, tracked_people, poses, body_part_boxes, person_inter
             for obj_label in interacted_objects:
                 action = f"P{person_id} working with {obj_label}"
                 cv2.putText(frame, action, (x1, y1 - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+
+    # Draw labelled kitchen object boxes
+    for box in boxes:
+        points_abs = [(int(x * frame_width), int(y * frame_height)) for x, y in box['points']]
+        for i in range(len(points_abs)):
+            cv2.line(frame, points_abs[i], points_abs[(i + 1) % len(points_abs)], (0, 255, 0), 2)
+        cv2.putText(frame, box['label'], points_abs[0], 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
     
     return frame
