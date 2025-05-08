@@ -62,8 +62,10 @@ class InferencePipeline:
         print(f"Processing video: {video_path}")
         
         cap, frame_width, frame_height, fps = load_video(video_path)
-        output_path = os.path.join(self.args.output_folder, f"output_{os.path.basename(video_path)}")
-        out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
+
+        if self.args.generate_video:
+            output_path = os.path.join(self.args.output_folder, f"output_{os.path.basename(video_path)}")
+            out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
 
         frame_count = 0
         for pose_result in self.pose_model.track(video_path, stream=True, classes=[0], tracker="bytetrack.yaml"):
@@ -76,14 +78,17 @@ class InferencePipeline:
             annotations = self._infer_actions(poses, frame_count, frame_width, frame_height)
             
             log_actions(self.csv_file, frame_count, annotations['person_interactions'], tracked_people)
-            annotated_frame = draw_annotations(
-                frame, tracked_people, poses, annotations['body_part_boxes'], 
-                annotations['person_interactions'], annotations['current_pids']
-            )
-            out.write(annotated_frame)
+            if self.args.generate_video:
+                annotated_frame = draw_annotations(
+                    frame, tracked_people, poses, annotations['body_part_boxes'], 
+                    annotations['person_interactions'], annotations['current_pids'],
+                    self.boxes,frame_width,frame_height
+                )
+                out.write(annotated_frame)
 
         cap.release()
-        out.release()
+        if self.args.generate_video:
+            out.release()
         print(f"Finished processing and saved video: {output_path}")
 
     def _extract_tracked_people(self, pose_result, frame_count):
@@ -194,6 +199,7 @@ if __name__ == "__main__":
     parser.add_argument("--cord_txt", default="data/cord.txt", help="Path to object coordinates text file")
     parser.add_argument("--model_weights", default="yolo11n-pose.pt", help="Path to YOLO model weights")
     parser.add_argument("--print_csv", action="store_true", help="Print CSV contents after processing")
+    parser.add_argument("--generate_video", action="store_true", default=False, help="Generate output video with annotated frames")    
     args = parser.parse_args()
     
     main(args)
