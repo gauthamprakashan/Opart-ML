@@ -68,21 +68,39 @@ class InferencePipeline:
             out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
 
         frame_count = 0
-        for pose_result in self.pose_model.track(video_path, stream=True, classes=[0], tracker="bytetrack.yaml"):
+        last_tracked_people = {}
+        last_poses = []
+        last_annotations = {'current_pids': {}, 'body_part_boxes': [], 'person_interactions': defaultdict(set)}
+        
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
             frame_count += 1
-            frame = pose_result.orig_img
-            frame_height, frame_width = frame.shape[:2] if frame_width == 0 or frame_height == 0 else (frame_height, frame_width)
-
-            tracked_people = self._extract_tracked_people(pose_result, frame_count)
-            poses = self._analyze_poses(tracked_people, frame_count)
-            annotations = self._infer_actions(poses, frame_count, frame_width, frame_height)
+            
+            if frame_count % self.args.frame_skip == 0:
+                # Run inference on this frame with downscaling
+                pose_results = self.pose_model.track(frame, stream=False, classes=[0], tracker="bytetrack.yaml", imgsz=self.args.imgsz, persist=True)
+                pose_result = pose_results[0]  # Single frame result
+                tracked_people = self._extract_tracked_people(pose_result, frame_count)
+                poses = self._analyze_poses(tracked_people, frame_count)
+                annotations = self._infer_actions(poses, frame_count, frame_width, frame_height)
+                # Store last results
+                last_tracked_people = tracked_people
+                last_poses = poses
+                last_annotations = annotations
+            else:
+                # Reuse last results for skipped frames
+                tracked_people = last_tracked_people
+                poses = last_poses
+                annotations = last_annotations
             
             log_actions(self.csv_file, frame_count, annotations['person_interactions'], tracked_people)
             if self.args.generate_video:
                 annotated_frame = draw_annotations(
                     frame, tracked_people, poses, annotations['body_part_boxes'], 
                     annotations['person_interactions'], annotations['current_pids'],
-                    self.boxes,frame_width,frame_height
+                    self.boxes, frame_width, frame_height
                 )
                 out.write(annotated_frame)
 
@@ -186,6 +204,11 @@ class InferencePipeline:
 
 def main(args):
     """Initialize and run the inference pipeline."""
+    # Parse imgsz to int or tuple
+    try:
+        args.imgsz = int(args.imgsz)
+    except ValueError:
+        args.imgsz = tuple(map(int, args.imgsz.split(',')))
     pipeline = InferencePipeline(args)
     pipeline.run()
 
@@ -199,7 +222,9 @@ if __name__ == "__main__":
     parser.add_argument("--cord_txt", default="data/cord.txt", help="Path to object coordinates text file")
     parser.add_argument("--model_weights", default="yolo11n-pose.pt", help="Path to YOLO model weights")
     parser.add_argument("--print_csv", action="store_true", help="Print CSV contents after processing")
-    parser.add_argument("--generate_video", action="store_true", default=False, help="Generate output video with annotated frames")    
+    parser.add_argument("--generate_video", action="store_true", default=False, help="Generate output video with annotated frames")
+    parser.add_argument("--imgsz", type=str, default="640", help="Target size for downscaling, e.g., '640' or '640,480'")
+    parser.add_argument("--frame_skip", type=int, default=1, help="Process every nth frame")
     args = parser.parse_args()
     
     main(args)
