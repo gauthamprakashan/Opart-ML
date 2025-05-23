@@ -3,7 +3,7 @@ import os
 import cv2
 from src.data.video_loader import get_video_paths, load_video
 from src.models.yolo_pose import load_yolo_pose_model
-from src.tracking.tracker import ArmMovementTracker
+from src.tracking.tracker import ArmMovementTracker,LegMovementTracker
 from src.inference.action_logger import log_actions
 from src.utils.helpers import calculate_iou_rotated, load_class_labels, load_object_coordinates, copy_to_dbfs
 from src.utils.visualization import draw_annotations
@@ -12,12 +12,13 @@ import numpy as np
 
 class InferencePipeline:
     """Manages the inference process for pose tracking and action detection."""
-    
+
     def __init__(self, args):
         self.args = args
         self.categories = self._load_class_labels()
         self.boxes = self._load_object_coordinates()
         self.movement_tracker = ArmMovementTracker(movement_threshold=7, frame_memory=15)
+        self.leg_tracker = LegMovementTracker(movement_threshold=0.01, frame_memory=15, min_walking_duration=0.5, fps=30)
         self.pose_model = self._load_yolo_pose_model()
         self.csv_file = self._setup_csv()
 
@@ -62,6 +63,7 @@ class InferencePipeline:
         print(f"Processing video: {video_path}")
         
         cap, frame_width, frame_height, fps = load_video(video_path)
+        self.leg_tracker.fps = fps  # Update tracker FPS
 
         if self.args.generate_video:
             output_path = os.path.join(self.args.output_folder, f"output_{os.path.basename(video_path)}")
@@ -84,7 +86,7 @@ class InferencePipeline:
                 pose_result = pose_results[0]  # Single frame result
                 tracked_people = self._extract_tracked_people(pose_result, frame_count)
                 poses = self._analyze_poses(tracked_people, frame_count)
-                annotations = self._infer_actions(poses, frame_count, frame_width, frame_height)
+                annotations = self._infer_actions(poses, frame, frame_count, frame_width, frame_height, tracked_people)
                 # Store last results
                 last_tracked_people = tracked_people
                 last_poses = poses
@@ -136,43 +138,80 @@ class InferencePipeline:
             {
                 'track_id': track_id,
                 'keypoints': data['keypoints'],
-                'center': np.mean(data['keypoints'][data['keypoints'][:, 2] > 0.5, :2], axis=0)
+                'center': np.mean(data['keypoints'][data['keypoints'][:, 2] > 0.5, :2], axis=0) if len(data['keypoints'][data['keypoints'][:, 2] > 0.5, :2]) > 0 else np.array([0, 0])
             } for track_id, data in tracked_people.items()
-            if len(data['keypoints'][data['keypoints'][:, 2] > 0.5, :2]) > 0
         ]
         
         print(f"Frame {frame_count}: Detected {len(poses)} poses")
         return poses
 
-    def _infer_actions(self, poses, frame_count, frame_width, frame_height):
-        """Infer actions and interactions from poses."""
+    def _infer_actions(self, poses, frame, frame_count, frame_width, frame_height, tracked_people):
+        """
+        Infer actions and interactions from poses.
+        
+        Args:
+            poses (list): List of pose dictionaries with track_id, keypoints, and center.
+            frame (np.ndarray): Current video frame for visualization.
+            frame_count (int): Current frame number.
+            frame_width (int): Width of the video frame.
+            frame_height (int): Height of the video frame.
+            tracked_people (dict): Dictionary of tracked individuals with boxes and keypoints.
+        
+        Returns:
+            dict: Annotations including current_pids, body_part_boxes, and person_interactions.
+        """
         current_pids = {}
         body_part_boxes = []
         person_interactions = defaultdict(set)
         pid = 0
+        fps = self.leg_tracker.fps
 
         for pose in sorted(poses, key=lambda x: x['track_id']):
             track_id = pose['track_id']
             current_pids[pid] = {'track_id': track_id, 'pose': pose}
             keypoints = pose['keypoints']
 
+            # Arm tracking
             for arm_side, wrist_idx, elbow_idx in [('left', 9, 7), ('right', 10, 8)]:
                 if keypoints[wrist_idx][2] > 0.65 and keypoints[elbow_idx][2] > 0.65:
                     wrist = keypoints[wrist_idx][:2]
                     elbow = keypoints[elbow_idx][:2]
-                    body_part_boxes.append(self._track_arm_movement(
+                    body_part_box = self._track_arm_movement(
                         pid, arm_side, wrist, elbow, frame_count, frame_width, frame_height
-                    ))
+                    )
+                    body_part_boxes.append(body_part_box)
 
-            for box in self.boxes:
-                for body_part in body_part_boxes:
-                    if body_part['person_id'] == pid and body_part['is_active']:
-                        wrist_idx = 9 if body_part['hand'] == 'left' else 10
-                        if keypoints[wrist_idx][2] > 0.5:
+            # Object interactions
+            for body_part in body_part_boxes:
+                if body_part['person_id'] == pid and body_part['is_active']:
+                    wrist_idx = 9 if body_part['hand'] == 'left' else 10
+                    if keypoints[wrist_idx][2] > 0.5:
+                        for box in self.boxes:
                             iou = calculate_iou_rotated(body_part["points"], box['points'], frame_width, frame_height)
                             if iou > 0.05:
                                 person_interactions[pid].add(box['label'])
-            
+
+            # Leg tracking (log and display only if no other actions)
+            leg_keypoints = {
+                'left_knee': keypoints[13][:2] if keypoints[13][2] > 0.5 else None,
+                'left_ankle': keypoints[15][:2] if keypoints[15][2] > 0.5 else None,
+                'right_knee': keypoints[14][:2] if keypoints[14][2] > 0.5 else None,
+                'right_ankle': keypoints[16][:2] if keypoints[16][2] > 0.5 else None
+            }
+            if all(kp is not None for kp in leg_keypoints.values()):
+                obj_label = 'Walking'
+                is_walking, should_log = self.leg_tracker.update_and_check_walking(
+                    pid, 
+                    leg_keypoints['left_knee'], 
+                    leg_keypoints['left_ankle'], 
+                    leg_keypoints['right_knee'], 
+                    leg_keypoints['right_ankle'], 
+                    frame_count,
+                    frame_height
+                )
+                if is_walking and should_log:
+                    person_interactions[pid].add(obj_label)
+
             pid += 1
 
         return {
@@ -223,8 +262,8 @@ if __name__ == "__main__":
     parser.add_argument("--model_weights", default="yolo11n-pose.pt", help="Path to YOLO model weights")
     parser.add_argument("--print_csv", action="store_true", help="Print CSV contents after processing")
     parser.add_argument("--generate_video", action="store_true", default=False, help="Generate output video with annotated frames")
-    parser.add_argument("--imgsz", type=str, default="640", help="Target size for downscaling, e.g., '640' or '640,480'")
-    parser.add_argument("--frame_skip", type=int, default=1, help="Process every nth frame")
+    parser.add_argument("--imgsz", type=str, default="640", help="Target size for downscaling, e.g., '640' or '640,480'") ##Remove this parameter and integrate with pre-proccesing class
+    parser.add_argument("--frame_skip", type=int, default=1, help="Process every nth frame")  #Remove this parameter and integrate with pre-proccesing class
     args = parser.parse_args()
     
     main(args)

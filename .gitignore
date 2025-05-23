@@ -27,7 +27,9 @@ Thumbs.db
 
 # Project-specific data files
 data/videos/*
+data/saved-videos/*
 output/*
+!data/saved-videos/.gitkeep
 !data/videos/.gitkeep
 !output/.gitkeep
 !notebooks/.gitkeep
